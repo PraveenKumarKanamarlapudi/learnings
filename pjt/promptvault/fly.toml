@@ -1,0 +1,34 @@
+# Fly.io config. First deploy: see "Deploy to Fly.io" in README.md.
+app = "promptvault"          # must be globally unique: change it, or let `fly launch --copy-config` rename it
+primary_region = "sin"       # Singapore. List regions with `fly platform regions`
+
+[build]
+
+[env]
+  PORT = "8080"
+  HOST = "0.0.0.0"
+  PV_DB = "/data/promptvault.db"
+  TRUST_PROXY = "1"          # Fly's proxy sets X-Forwarded-*; needed for correct client IP and Secure cookies
+  # PV_PASSWORD is a secret, never put it here: `fly secrets set PV_PASSWORD=...`
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"     # stops when idle (saves money); wakes on the next request in a second or two
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/healthz"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+
+[[mounts]]
+  source = "pv_data"         # the SQLite database lives on this volume and survives deploys
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

@@ -37,6 +37,19 @@ learnings/
 ├── models/                    # Saved or exported models
 │   └── README.md
 │
-└── references/                # Citations, bibliography, and links
-    └── references.bib
+├── references/                # Citations, bibliography, and links
+│   └── references.bib
+│
+└── pjt/                       # Self-contained projects, each with its own README
+    └── promptvault/           # Local-first AI prompt library manager
 ```
+
+## Projects
+
+Larger, runnable projects live under [`pjt/`](pjt/). Each one has its own README with setup instructions.
+
+| Project | What it is | Stack |
+| --- | --- | --- |
+| [promptvault](pjt/promptvault/) | Save, organise, version and reuse AI prompts across platforms. Dashboard, markdown editor with `{{variables}}`, version history with diff and restore, search and filters, JSON/Markdown/CSV import and export, optional password login, and Docker + Fly.io deployment config. | React, TypeScript, Vite, Tailwind, Express, Zod, SQLite, Docker |
+
+![PromptVault dashboard](pjt/promptvault/docs/screenshots/dashboard.png)
