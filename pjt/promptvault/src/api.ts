@@ -1,5 +1,5 @@
 export class ApiError extends Error {
-  constructor(message: string, public issues: { path: string; message: string }[] = []) {
+  constructor(message: string, public issues: { path: string; message: string }[] = [], public status = 0) {
     super(message);
   }
 }
@@ -17,7 +17,9 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   }
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(data.error ?? `Request failed (${res.status})`, data.issues);
+  // A 401 on anything but the login call means the session expired: the app shows the login screen.
+  if (res.status === 401 && path !== '/login') window.dispatchEvent(new Event('pv:unauthorized'));
+  if (!res.ok) throw new ApiError(data.error ?? `Request failed (${res.status})`, data.issues, res.status);
   return data as T;
 }
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ArrowDownUp, Clock, FolderTree, Layers, LayoutDashboard, Library as LibIcon, Menu, Moon, Plus, Search, Settings, Sparkles, Star, Sun } from 'lucide-react';
+import { ArrowDownUp, Clock, FolderTree, Layers, LayoutDashboard, Library as LibIcon, LogOut, Menu, Moon, Plus, Search, Settings, Sparkles, Star, Sun } from 'lucide-react';
 import type { Category, Prompt } from '../shared/schema';
 import { api } from './api';
 import { Ctx, type AppCtx, type View } from './ctx';
@@ -7,6 +7,7 @@ import { DEFAULT_FILTERS, type Filters } from './lib/filter';
 import { copyText, useLocalStorage } from './lib/util';
 import { Dashboard } from './components/Dashboard';
 import { Library } from './components/Library';
+import { Login } from './components/Login';
 import { CategoriesView, DataView, PlatformsView, SettingsView } from './components/Manage';
 import { PromptDetail, UseDialog } from './components/PromptDetail';
 import { PromptEditor } from './components/PromptEditor';
@@ -36,6 +37,7 @@ export default function App() {
   const [editor, setEditor] = useState<Prompt | 'new' | null>(null);
   const [using, setUsing] = useState<Prompt | null>(null);
   const [menu, setMenu] = useState(false);
+  const [auth, setAuth] = useState<{ state: 'loading' | 'login' | 'ok'; required: boolean }>({ state: 'loading', required: false });
   const [toastMsg, setToastMsg] = useState<{ msg: string; kind: 'ok' | 'error' } | null>(null);
   const [author, setAuthor] = useLocalStorage('pv.author', 'Me');
   const [theme, setTheme] = useState<'light' | 'dark'>(() => (document.documentElement.classList.contains('dark') ? 'dark' : 'light'));
@@ -54,13 +56,43 @@ export default function App() {
       setLoaded(true);
     }
   }, []);
-  useEffect(() => { void reload(); }, [reload]);
+  // Ask the server whether a login is needed; load data only once we're allowed to.
+  useEffect(() => {
+    api.get<{ authRequired: boolean; authenticated: boolean }>('/session')
+      .then((s) => setAuth({ required: s.authRequired, state: !s.authRequired || s.authenticated ? 'ok' : 'login' }))
+      .catch(() => setAuth({ required: false, state: 'ok' })); // server unreachable: reload() below shows the error + Retry
+  }, []);
+  useEffect(() => { if (auth.state === 'ok') void reload(); }, [auth.state, reload]);
+  useEffect(() => {
+    const h = () => { setDetailId(null); setEditor(null); setUsing(null); setAuth((a) => ({ ...a, state: 'login' })); };
+    window.addEventListener('pv:unauthorized', h);
+    return () => window.removeEventListener('pv:unauthorized', h);
+  }, []);
+  const signOut = async () => {
+    await api.post('/logout').catch(() => {});
+    setPrompts([]); setCategories([]); setDetailId(null); setEditor(null); setUsing(null); setView('dashboard'); setFilters(DEFAULT_FILTERS);
+    setAuth({ required: true, state: 'login' });
+  };
 
   const toast = useCallback((msg: string, kind: 'ok' | 'error' = 'ok') => {
     setToastMsg({ msg, kind });
     clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToastMsg(null), kind === 'error' ? 6000 : 2500);
   }, []);
+
+  // Safety net for any action that fails without its own handler (favorite, copy, delete, ...): tell the user
+  // instead of failing silently. A 401 needs no toast: the login screen is the feedback.
+  useEffect(() => {
+    const h = (e: PromiseRejectionEvent) => {
+      e.preventDefault();
+      const err = e.reason as { status?: number; message?: string } | undefined;
+      if (err?.status === 401) return;
+      console.error(e.reason);
+      toast(err?.message || 'Something went wrong', 'error');
+    };
+    window.addEventListener('unhandledrejection', h);
+    return () => window.removeEventListener('unhandledrejection', h);
+  }, [toast]);
 
   const ctx: AppCtx = useMemo(() => ({
     prompts, categories, reload, toast, author, setAuthor, theme,
@@ -110,6 +142,9 @@ export default function App() {
   const closeDetail = useCallback(() => setDetailId(null), []);
   const showLibrary = view in TITLES;
 
+  if (auth.state === 'loading') return <p className="p-6 text-sm text-zinc-500">Loading…</p>;
+  if (auth.state === 'login') return <Login onSuccess={() => setAuth({ required: true, state: 'ok' })} />;
+
   return (
     <Ctx.Provider value={ctx}>
       <div className="flex min-h-screen">
@@ -139,6 +174,7 @@ export default function App() {
                 value={filters.q} onChange={(e) => onSearch(e.target.value)} />
             </div>
             <Button variant="ghost" aria-label="Toggle dark mode" onClick={ctx.toggleTheme}>{theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}</Button>
+            {auth.required && <Button variant="ghost" aria-label="Sign out" title="Sign out" onClick={signOut}><LogOut size={17} /></Button>}
             <Button variant="primary" onClick={() => setEditor('new')}><Plus size={16} /><span className="hidden sm:inline">New prompt</span></Button>
           </header>
 

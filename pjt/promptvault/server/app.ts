@@ -1,6 +1,7 @@
 import express, { type ErrorRequestHandler } from 'express';
 import { z, ZodError } from 'zod';
 import { CategoryInput, ImportPrompt, PromptInput } from '../shared/schema';
+import { setupAuth } from './auth';
 import {
   HttpError, createCategory, createPrompt, deleteCategory, deletePrompt, duplicatePrompt, ensureCategory, getPrompt,
   listCategories, listPrompts, listVersions, moveCategory, recordUse, restoreVersion, toggleFavorite, tx, updateCategory,
@@ -24,9 +25,26 @@ const BackupFile = z.object({
   versions: z.array(Row),
 });
 
-export function createApp(db: Db) {
+export interface AppOptions {
+  /** When set, every /api route except login/session requires a signed-in session. */
+  password?: string;
+  /** Set behind a reverse proxy (Fly, nginx) so req.ip and req.secure reflect the real client. */
+  trustProxy?: boolean;
+}
+
+export function createApp(db: Db, opts: AppOptions = {}) {
   const app = express();
+  app.disable('x-powered-by');
+  if (opts.trustProxy) app.set('trust proxy', 1);
+  app.use((_q, res, next) => {
+    res.set({ 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer' });
+    next();
+  });
   app.use(express.json({ limit: '25mb' }));
+  app.get('/healthz', (_q, r) => void r.type('text').send('ok')); // for the host's health check; no data
+
+  if (opts.password) setupAuth(app, opts.password);
+  else app.get('/api/session', (_q, r) => void r.json({ authRequired: false, authenticated: true }));
 
   // ----- prompts -----
   app.get('/api/prompts', (_q, r) => r.json(listPrompts(db)));
